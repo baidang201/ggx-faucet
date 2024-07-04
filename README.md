@@ -19,7 +19,9 @@ This sample app connects to a user's wallet, then fetches their passport score f
 
 ![Create scorer](./screenshots/create_scorer.png)
 
-3. Run migrations `npx knex migrate:latest`
+3. Run migrations `npx knex migrate:latest` for dev
+
+Run migrations `npx knex migrate:latest --env production` for production
 
 ### Start the app
 
@@ -31,8 +33,14 @@ npm install
 
 then
 
+for dev:
 ```bash
 npm run dev
+```
+
+for production:
+```bash
+npm run build && npm run start
 ```
 
 Finally, you can navigate to `http://localhost:3000` to view the sample app.
