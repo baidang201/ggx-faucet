@@ -6,6 +6,19 @@ import { useAccount, useSignMessage } from "wagmi";
 import styles from "@/styles/AirDrop.module.css";
 import { Keyring } from '@polkadot/api';
 import { ApiPromise, WsProvider } from '@polkadot/api';
+import {
+  blake2AsU8a,
+  decodeAddress,
+  encodeAddress,
+} from "@polkadot/util-crypto";
+import {
+  hexToU8a,
+  isHex,
+  stringToU8a,
+  u8aConcat,
+} from "@polkadot/util";
+import { isAddress } from 'web3-validator';
+import validator from 'validator'
 
 export default function AirDrop() {
   useEffect(() => {
@@ -16,6 +29,7 @@ export default function AirDrop() {
     onDisconnect() {
       reset();
     },
+    
   });
 
   useEffect(() => {
@@ -32,31 +46,30 @@ export default function AirDrop() {
     checkIfAddressAlreadyInAirdropList();
   }, [address]);
 
-  async function addToAirdrop() {
-    setNonce("");
-    setPassportScore(0);
-    //  Step #1 (Optional, only required if using the "signature" param when submitting a user's passport. See https://docs.passport.gitcoin.co/building-with-passport/scorer-api/endpoint-definition#submit-passport)
-    //    We call our /api/scorer-message endpoint (/pages/api/scorer-message.js) which internally calls /registry/signing-message
-    //    on the scorer API. Instead of calling /registry/signing-message directly, we call it via our api endpoint so we do not
-    //    expose our scorer API key to the frontend.
-    //    This will return a response like:
-    //    {
-    //      message: "I hereby agree to submit my address in order to score my associated Gitcoin Passport from Ceramic.",
-    //      nonce: "b7e3b0f86820744b9242dd99ce91465f10c961d98aa9b3f417f966186551"
-    //    }
-    const scorerMessageResponse = await axios.get("/api/scorer-message");
-    if (scorerMessageResponse.status !== 200) {
-      console.error("failed to fetch scorer message");
-      return;
+  function isValidAddressPolkadotAddress(address) {
+    try {
+      encodeAddress(
+        isHex(address)
+          ? hexToU8a(address)
+          : decodeAddress(address)
+      );
+  
+      return true;
+    } catch (error) {
+      return false;
     }
-    setNonce(scorerMessageResponse.data.nonce);
-
-    //  Step #2 (Optional, only required if using the "signature" param when submitting a user's passport.)
-    //    Have the user sign the message that was returned from the scorer api in Step #1.
-    signMessage({ message: scorerMessageResponse.data.message });
   }
 
   async function sendToken() {
+    if (input === "") {
+      return
+    }
+
+    if (!isAddress(input) && !isValidAddressPolkadotAddress(input)) {
+      alert("address is not a isValid Address");
+      return;
+    }
+
     setNonce("");
     setPassportScore(0);
     //  Step #1 (Optional, only required if using the "signature" param when submitting a user's passport. See https://docs.passport.gitcoin.co/building-with-passport/scorer-api/endpoint-definition#submit-passport)
@@ -136,9 +149,8 @@ export default function AirDrop() {
       setChecked(true);
 
       if (scoreResponse.data.score < 1) {
-        alert("Sorry, your score not enough for the faucet.");
+        alert("Sorry, your score not enough for the faucet. go to https://passport.gitcoin.co to increase your score.");
       } else {
-
         // Construct
         const wsProvider = new WsProvider(process.env.NEXT_PUBLIC_GGX_WS_URL);
         const api = await ApiPromise.create({ provider: wsProvider });
@@ -148,10 +160,30 @@ export default function AirDrop() {
 
         // Create alice (carry-over from the keyring section)
         const faucetAccount = keyring.addFromUri(process.env.NEXT_PUBLIC_MNEMONIC);
-        const receive = input;
+        let receive = input;
         const amount = process.env.NEXT_PUBLIC_FAUCET_AMOUNT;
 
-        console.log("@@@ check params", { pass_port_address: address,  receive_address: receive, receive_amount: amount});
+        const chainInfo = await api.registry.getChainProperties()
+
+        if (isAddress(input)) //todo check if evm address
+        {
+          //todo evm support convert,   substrate address
+          const addr = hexToU8a(input);
+          const data = stringToU8a("evm:");
+          const res = blake2AsU8a(u8aConcat(data, addr));
+          const prefix = chainInfo.ss58Format;
+          const output = encodeAddress(res, prefix);
+
+          receive = output;
+
+          console.log("new address", receive);
+        } else {
+          if(!isValidAddressPolkadotAddress(input)) {
+            console.log("address is not a isValid Polkadot Address");
+            return;
+          }
+        }
+
         try {
           const resp = await axios.post("/api/faucet/check", { pass_port_address: address,  receive_address: receive, receive_amount: amount});
           if (resp.status === 200) {
@@ -172,11 +204,11 @@ export default function AirDrop() {
         // Show the hash
         console.log(`@@@Submitted with hash ${txHash}`);
         console.log("Your token has been sent.");
-        setTxHash(txHash);
+        setTxHash(txHash.toString());
 
         try {
           let datatime = new Date();
-          const resp = await axios.post("/api/faucet/add", { pass_port_address: address,  receive_address: receive, receive_time: datatime, receive_amount: amount});
+          const resp = await axios.post("/api/faucet/add", { pass_port_address: address,  receive_address: input, receive_time: datatime, receive_amount: amount});
           if (resp.status === 200) {
   
           } else {
@@ -203,64 +235,26 @@ export default function AirDrop() {
   const [nonce, setNonce] = useState("");
   const [passportScore, setPassportScore] = useState(0);
   const [checked, setChecked] = useState(false);
-  const [input, setInput] = useState('qHUXxGJ3vVec4pZ6uaXdBgm3modwgxHAEEDtzQ6gjqD6ztec8');
+  const [input, setInput] = useState('');
   const [txHash, setTxHash] = useState('');
+
+  const validate = (inputText) => { 
+    setInput(validator.trim(inputText))
+  }
 
   function display() {
     if (isMounted && address) {
-      if (checked) {
-        if (passportScore < 1) {
-          return (
-            <div>
-              <p className={styles.p}>
-                Your score isn&apos;t high enough, collect more stamps to
-                qualify.
-              </p>
-              <p style={{ marginTop: "20px" }} className={styles.p}>
-                Passport Score:{" "}
-                <span style={{ color: "rgb(111 63 245" }}>
-                  {passportScore | 0}
-                </span>
-                /1
-              </p>
-              <div style={{ marginTop: "10px" }}>
-                <a
-                  className={styles.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  href="https://passport.gitcoin.co"
-                >
-                  Click here to increase your score.
-                </a>
-              </div>
-            </div>
-          );
-        } else {
           return (
             <div>
             <div>
-            <input className={styles.input} placeholder="Your ggx address" value={input} onInput={e => setInput(e.target.value)}></input>
+            <input className={styles.input} placeholder="Your ggx address" value={input} onChange={(e) => validate(e.target.value)}></input>
             <button className={styles.btn} onClick={() => sendToken(address)}>
               get ggx
             </button>
             </div>
-            <div>tx:  <a href={ process.env.NEXT_PUBLIC_GGX_EXPLORER_URL + txHash}>{txHash}</a></div>
-          </div>
-          );
-        }
-      } else {
-        return (
-          <div>
-            <div>
-            <input className={styles.input} placeholder="Your ggx address" value={input} onInput={e => setInput(e.target.value)}></input>
-            <button className={styles.btn} onClick={() => sendToken(address)}>
-              get ggx
-            </button>
+            <div>tx:  <a href={process.env.NEXT_PUBLIC_GGX_EXPLORER_URL}>{txHash}</a></div>
             </div>
-            <div>tx:  <a href={ process.env.NEXT_PUBLIC_GGX_EXPLORER_URL + txHash}>{txHash}</a></div>
-          </div>
-        );
-      }
+          );
     } else {
       return (
         <p className={styles.p}>

@@ -23,6 +23,15 @@ This sample app connects to a user's wallet, then fetches their passport score f
 
 Run migrations `npx knex migrate:latest --env production` for production
 
+4. get app ID from https://www.alchemy.com/
+Replace `ALCHEMY_ID` with your app ID in `.env.local`.
+
+5. update faucet config in `.env.local`
+NEXT_PUBLIC_FAUCET_AMOUNT
+NEXT_PUBLIC_MNEMONIC
+NEXT_PUBLIC_GGX_WS_URL
+FAUCET_AMOUNT_LIMIT_PER_ADDRESS
+
 ### Start the app
 
 Now you can start the app by running:
